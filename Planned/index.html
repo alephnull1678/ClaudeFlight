@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flight Simulator</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            background: #000;
+        }
+        
+        canvas {
+            display: block;
+        }
+        
+        .ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+        }
+        
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .controls div {
+            margin: 3px 0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .key {
+            background: #333;
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-right: 8px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .speedometer {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 120px;
+            height: 120px;
+        }
+        
+        .altimeter {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 40px;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .altitude-bar {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 180px;
+            background: linear-gradient(to top, #4a90e2 0%, #87ceeb 100%);
+            border-radius: 10px;
+        }
+        
+        .altitude-indicator {
+            position: absolute;
+            right: -15px;
+            width: 8px;
+            height: 8px;
+            background: #fff;
+            border-radius: 50%;
+            transition: bottom 0.3s ease;
+        }
+        
+        .biome-display {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 16px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .pause-menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            backdrop-filter: blur(20px);
+            display: none;
+        }
+        
+        .pause-menu h2 {
+            margin: 0 0 20px 0;
+            font-size: 24px;
+        }
+        
+        .pause-menu button {
+            background: #4a90e2;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        
+        .pause-menu button:hover {
+            background: #357abd;
+        }
+        
+        .crash-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 0, 0, 0.9);
+            color: #fff;
+            padding: 20px 40px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            backdrop-filter: blur(10px);
+            display: none;
+            border: 2px solid #ff4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="ui-overlay">
+        <div class="controls">
+            <div><span class="key">W/S</span>Pitch</div>
+            <div><span class="key">A/D</span>Yaw</div>
+            <div><span class="key">Q/E</span>Roll</div>
+            <div><span class="key">Shift</span>Throttle</div>
+            <div><span class="key">Mouse</span>Look</div>
+            <div><span class="key">F</span>Camera</div>
+            <div><span class="key">R</span>Reset</div>
+            <div><span class="key">ESC</span>Menu</div>
+        </div>
+        
+        <div class="biome-display" id="biome-display">Forest</div>
+        
+        <div class="altimeter">
+            <div class="altitude-bar">
+                <div class="altitude-indicator" id="altitude-indicator"></div>
+            </div>
+        </div>
+        
+        <div class="speedometer" id="speedometer"></div>
+        
+        <div class="pause-menu" id="pause-menu">
+            <h2>Paused</h2>
+            <button onclick="togglePause()">Resume</button>
+            <button onclick="toggleSound()">Toggle Sound</button>
+        </div>
+        
+        <div class="crash-message" id="crash-message">
+            CRASHED!<br>
+            Press R to Reset
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+    <script type="module">
+        // Import SimplexNoise as module
+        import { createNoise2D } from 'https://unpkg.com/simplex-noise@4.0.1/dist/esm/simplex-noise.js';
+        
+        // Make it globally available
+        window.createNoise2D = createNoise2D;
+        
+        // Wait for THREE to be available and load main script
+        function loadMainScript() {
+            if (typeof THREE !== 'undefined') {
+                const script = document.createElement('script');
+                script.src = 'flight-simulator.js';
+                document.head.appendChild(script);
+            } else {
+                setTimeout(loadMainScript, 100);
+            }
+        }
+        
+        loadMainScript();
+    </script>
+</body>
+</html>
