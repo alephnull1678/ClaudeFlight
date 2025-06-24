@@ -174,10 +174,10 @@ class FlightSimulator {
             if (Math.random() < 0.3) {
                 const cloud = this.createSingleCloud();
                 
-                // Position cloud within chunk boundaries
+                // Position cloud within chunk boundaries - moved higher
                 cloud.position.set(
                     worldX + (Math.random() - 0.5) * this.chunkSize,
-                    Math.random() * 100 + 80, // Height between 80-180
+                    Math.random() * 80 + 120, // Height between 120-200 (moved up from 80-180)
                     worldZ + (Math.random() - 0.5) * this.chunkSize
                 );
                 
@@ -209,7 +209,8 @@ class FlightSimulator {
         });
         
         const cloud = new THREE.Mesh(cloudGeometry, cloudMaterial);
-        cloud.userData.speed = Math.random() * 0.1 + 0.05;
+        cloud.userData.speed = Math.random() * 0.2 + 0.1; // Faster scrolling
+        cloud.userData.direction = Math.random() * Math.PI * 2; // Random direction
         
         return cloud;
     }
@@ -225,16 +226,19 @@ class FlightSimulator {
         fuselage.castShadow = true;
         this.airplane.add(fuselage);
         
-        // Wings
-        const wingGeometry = new THREE.BoxGeometry(12, 0.3, 3);
+        // Wings - two separate rectangles extending from body
+        const wingGeometry = new THREE.BoxGeometry(6, 0.3, 2);
         const wingMaterial = new THREE.MeshLambertMaterial({ color: 0x004499 });
+        
+        // Left wing extending to the left
         const leftWing = new THREE.Mesh(wingGeometry, wingMaterial);
-        leftWing.position.set(0, -0.5, -1);
+        leftWing.position.set(0, -0.5, -1.5); // Much closer to body (was -2.5)
         leftWing.castShadow = true;
         this.airplane.add(leftWing);
         
+        // Right wing extending to the right  
         const rightWing = new THREE.Mesh(wingGeometry, wingMaterial);
-        rightWing.position.set(0, -0.5, 1);
+        rightWing.position.set(0, -0.5, 1.5); // Much closer to body (was 2.5)
         rightWing.castShadow = true;
         this.airplane.add(rightWing);
         
@@ -262,43 +266,21 @@ class FlightSimulator {
     }
 
     createExhaustParticles() {
-        const particleCount = 50;
-        const particles = new THREE.BufferGeometry();
-        const positions = new Float32Array(particleCount * 3);
-        const colors = new Float32Array(particleCount * 3);
-        
-        for (let i = 0; i < particleCount; i++) {
-            positions[i * 3] = 0;
-            positions[i * 3 + 1] = 0;
-            positions[i * 3 + 2] = 0;
-            
-            colors[i * 3] = 0.5 + Math.random() * 0.5;
-            colors[i * 3 + 1] = 0.5 + Math.random() * 0.5;
-            colors[i * 3 + 2] = 0.5 + Math.random() * 0.5;
-        }
-        
-        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        
-        const particleMaterial = new THREE.PointsMaterial({
-            size: 2,
-            vertexColors: true,
-            transparent: true,
-            opacity: 0.6
-        });
-        
-        this.exhaustParticles = new THREE.Points(particles, particleMaterial);
+        // Create a group to hold individual particle meshes
+        this.exhaustParticles = new THREE.Group();
         this.exhaustParticles.position.set(-4, 0, 0);
         this.airplane.add(this.exhaustParticles);
         
         this.particles = [];
-        for (let i = 0; i < particleCount; i++) {
-            this.particles.push({
-                position: new THREE.Vector3(),
-                velocity: new THREE.Vector3(),
-                life: 0
-            });
-        }
+        this.particlePool = [];
+        
+        // Create geometry and material for square particles
+        this.particleGeometry = new THREE.PlaneGeometry(1, 1);
+        this.particleMaterial = new THREE.MeshBasicMaterial({
+            color: 0x808080, // Grayscale
+            transparent: true,
+            opacity: 0.7
+        });
     }
 
     setupTerrain() {
@@ -320,16 +302,20 @@ class FlightSimulator {
         const worldX = chunkX * this.chunkSize;
         const worldZ = chunkZ * this.chunkSize;
         
-        // Generate terrain - reverted to simpler approach
+        // Generate terrain with proper XZ plane handling (fix for stripe issue)
         const resolution = 64;
         const terrainGeometry = new THREE.PlaneGeometry(this.chunkSize, this.chunkSize, resolution, resolution);
+        
+        // IMMEDIATELY rotate the geometry so vertices are in X-Z plane, not X-Y
+        terrainGeometry.rotateX(-Math.PI / 2);
+        
         const vertices = terrainGeometry.attributes.position.array;
         const colors = new Float32Array((vertices.length / 3) * 3);
         
+        // Now vertices are properly laid out as: X (east-west), Y (height), Z (north-south)
         for (let i = 0; i < vertices.length; i += 3) {
-            // Use exact world coordinates for consistent terrain generation
-            const localX = vertices[i];
-            const localZ = vertices[i + 1];
+            const localX = vertices[i];     // X coordinate (east-west)
+            const localZ = vertices[i + 2]; // Z coordinate (north-south) - was the issue!
             
             // Round coordinates to ensure consistent sampling across chunks
             const worldCoordX = Math.round((worldX + localX) * 100) / 100;
@@ -337,7 +323,7 @@ class FlightSimulator {
             
             // Get terrain height using world coordinates
             const height = this.getTerrainHeight(worldCoordX, worldCoordZ);
-            vertices[i + 2] = height;
+            vertices[i + 1] = height; // Set Y coordinate (height)
             
             // Determine biome for this specific vertex using noise
             const biome = this.getBiomeAtPosition(worldCoordX, worldCoordZ);
@@ -361,7 +347,7 @@ class FlightSimulator {
         });
         
         const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
-        terrain.rotation.x = -Math.PI / 2;
+        // No need to rotate at render time - geometry is already rotated
         terrain.position.set(worldX, 0, worldZ);
         terrain.receiveShadow = true;
         chunk.add(terrain);
@@ -398,7 +384,7 @@ class FlightSimulator {
     getTerrainHeight(x, z) {
         if (!this.noise) return 0;
         try {
-            // Macro-scale terrain (large hills and valleys) - much larger scale
+            // Macro-scale terrain (large hills and valleys) - RE-ENABLED
             const macroScale = this.noise(x * 0.0008, z * 0.0008) * 80; // Much larger scale, increased amplitude
             
             // Micro-scale terrain (brought back for detail)
@@ -944,36 +930,76 @@ class FlightSimulator {
     updateExhaustParticles() {
         if (!this.exhaustParticles) return;
         
-        const positions = this.exhaustParticles.geometry.attributes.position.array;
+        const isThrusting = this.thrust > 0.01;
+        const currentTime = Date.now();
         
-        for (let i = 0; i < this.particles.length; i++) {
-            const particle = this.particles[i];
-            
-            if (particle.life <= 0) {
-                // Respawn particle
-                particle.position.set(0, 0, 0);
-                particle.velocity.set(
-                    (Math.random() - 0.5) * 0.5 - this.thrust * 2,
-                    (Math.random() - 0.5) * 0.2,
-                    (Math.random() - 0.5) * 0.2
-                );
-                particle.life = 1;
-            }
-            
-            // Update particle
-            particle.position.add(particle.velocity);
-            particle.life -= 0.02;
-            
-            // Update position in buffer
-            positions[i * 3] = particle.position.x;
-            positions[i * 3 + 1] = particle.position.y;
-            positions[i * 3 + 2] = particle.position.z;
+        // Spawn new particles when thrusting
+        if (isThrusting && Math.random() < 0.3) { // 30% chance each frame
+            this.spawnSmokeParticle();
         }
         
-        this.exhaustParticles.geometry.attributes.position.needsUpdate = true;
+        // Update existing particles
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const particle = this.particles[i];
+            const age = (currentTime - particle.spawnTime) / 1000; // Age in seconds
+            
+            if (age > 2) {
+                // Remove particle after 2 seconds
+                this.exhaustParticles.remove(particle.mesh);
+                this.particles.splice(i, 1);
+                continue;
+            }
+            
+            // Apply physics
+            particle.velocity.y -= 0.01; // Gravity
+            particle.velocity.multiplyScalar(0.99); // Air resistance
+            
+            // Update position in world space (not relative to plane)
+            const worldPosition = new THREE.Vector3();
+            particle.mesh.getWorldPosition(worldPosition);
+            
+            // Convert velocity to world space and apply
+            const worldVelocity = particle.velocity.clone();
+            worldVelocity.applyQuaternion(this.airplane.quaternion);
+            
+            worldPosition.add(worldVelocity);
+            
+            // Convert back to local space relative to plane's exhaust position
+            const exhaustWorldPos = new THREE.Vector3();
+            this.exhaustParticles.getWorldPosition(exhaustWorldPos);
+            
+            particle.mesh.position.copy(worldPosition.sub(exhaustWorldPos));
+            
+            // Billboard effect - make particle face camera
+            particle.mesh.lookAt(this.camera.position);
+            
+            // Fade out over time
+            const fadeProgress = age / 2;
+            particle.mesh.material.opacity = 0.7 * (1 - fadeProgress);
+        }
+    }
+    
+    spawnSmokeParticle() {
+        // Create new smoke particle
+        const particle = {
+            mesh: new THREE.Mesh(this.particleGeometry, this.particleMaterial.clone()),
+            velocity: new THREE.Vector3(
+                -2 - Math.random() * 2, // Backward from plane
+                (Math.random() - 0.5) * 0.5, // Small random Y
+                (Math.random() - 0.5) * 0.5  // Small random Z
+            ),
+            spawnTime: Date.now()
+        };
         
-        // Show/hide based on thrust
-        this.exhaustParticles.visible = this.thrust > 0.1;
+        // Set random gray-black color (darker)
+        const grayValue = 0.1 + Math.random() * 0.3; // 0.1 to 0.4 (much darker)
+        particle.mesh.material.color.setRGB(grayValue, grayValue, grayValue);
+        
+        // Start at exhaust position
+        particle.mesh.position.set(0, 0, 0);
+        
+        this.exhaustParticles.add(particle.mesh);
+        this.particles.push(particle);
     }
 
     updateCamera() {
@@ -1092,8 +1118,18 @@ class FlightSimulator {
             this.sky.position.copy(this.airplane.position);
         }
         
-        // Clouds now move with chunks and are generated procedurally
-        // No need to update individual cloud positions
+        // Update cloud positions for scrolling effect
+        this.chunks.forEach(chunk => {
+            chunk.children.forEach(child => {
+                if (child.userData && child.userData.speed) {
+                    // Move clouds in their assigned direction
+                    const speed = child.userData.speed;
+                    const direction = child.userData.direction;
+                    child.position.x += Math.cos(direction) * speed;
+                    child.position.z += Math.sin(direction) * speed;
+                }
+            });
+        });
     }
 
     updateUI() {
