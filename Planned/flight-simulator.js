@@ -325,11 +325,8 @@ class FlightSimulator {
             const height = this.getTerrainHeight(worldCoordX, worldCoordZ);
             vertices[i + 1] = height; // Set Y coordinate (height)
             
-            // Determine biome for this specific vertex using noise
-            const biome = this.getBiomeAtPosition(worldCoordX, worldCoordZ);
-            
-            // Set color based on biome
-            const color = new THREE.Color(biome.color);
+            // Get blended biome color for smooth transitions
+            const color = this.getBlendedBiomeColor(worldCoordX, worldCoordZ);
             const vertexIndex = i / 3;
             colors[vertexIndex * 3] = color.r;
             colors[vertexIndex * 3 + 1] = color.g;
@@ -368,16 +365,54 @@ class FlightSimulator {
         if (!this.noise) return this.biomes[0];
         
         try {
-            // TESTING: Make biome scale extremely huge to test if biomes cause terrain holes
-            const primaryNoise = this.noise(x * 0.00001, z * 0.00001); // Extremely large biome areas (10x larger)
-            const secondaryNoise = this.noise(x * 0.00003, z * 0.00003) * 0.3; // Secondary variation
-            const combinedNoise = primaryNoise + secondaryNoise;
+            // Use multiple noise layers for natural biome transitions - larger scale for bigger biomes
+            const primaryNoise = this.noise(x * 0.00005, z * 0.00005); // Main biome regions - much larger
+            const secondaryNoise = this.noise(x * 0.0002, z * 0.0002) * 0.4; // Secondary variation
+            const tertiaryNoise = this.noise(x * 0.0005, z * 0.0005) * 0.2; // Fine detail
+            const combinedNoise = primaryNoise + secondaryNoise + tertiaryNoise;
             
             const biomeIndex = Math.floor((combinedNoise + 1) * 0.5 * this.biomes.length);
             return this.biomes[Math.min(Math.max(biomeIndex, 0), this.biomes.length - 1)];
         } catch (e) {
             console.warn('Biome generation error:', e);
             return this.biomes[0];
+        }
+    }
+
+    // New function to get blended biome color for smooth transitions
+    getBlendedBiomeColor(x, z) {
+        if (!this.noise) return new THREE.Color(this.biomes[0].color);
+        
+        try {
+            // Sample multiple nearby biomes for blending
+            const sampleDistance = 20; // Distance between samples for blending
+            const samples = [
+                { pos: [x, z], weight: 1.0 },
+                { pos: [x + sampleDistance, z], weight: 0.3 },
+                { pos: [x - sampleDistance, z], weight: 0.3 },
+                { pos: [x, z + sampleDistance], weight: 0.3 },
+                { pos: [x, z - sampleDistance], weight: 0.3 }
+            ];
+            
+            let totalRed = 0, totalGreen = 0, totalBlue = 0, totalWeight = 0;
+            
+            samples.forEach(sample => {
+                const biome = this.getBiomeAtPosition(sample.pos[0], sample.pos[1]);
+                const color = new THREE.Color(biome.color);
+                totalRed += color.r * sample.weight;
+                totalGreen += color.g * sample.weight;
+                totalBlue += color.b * sample.weight;
+                totalWeight += sample.weight;
+            });
+            
+            return new THREE.Color(
+                totalRed / totalWeight,
+                totalGreen / totalWeight,
+                totalBlue / totalWeight
+            );
+        } catch (e) {
+            console.warn('Biome blending error:', e);
+            return new THREE.Color(this.biomes[0].color);
         }
     }
 
@@ -568,9 +603,12 @@ class FlightSimulator {
     }
 
     updateSpeedometer() {
+        if (!this.speedometerCtx || !this.speedometerCanvas) return;
+        
         const ctx = this.speedometerCtx;
         const canvas = this.speedometerCanvas;
         
+        // Clear the canvas completely
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
         // Background circle
@@ -598,17 +636,23 @@ class FlightSimulator {
             ctx.stroke();
         }
         
-        // Speed needle
-        const speedRatio = Math.min(this.speed / 50, 1);
+        // Speed needle - fixed calculation
+        const maxSpeed = 500; // Maximum speed for full needle sweep
+        const currentSpeed = Math.max(0, this.speed); // Ensure non-negative
+        const speedRatio = Math.min(currentSpeed / maxSpeed, 1); // Clamp to 0-1
+        
+        // Calculate needle angle (sweep from -135° to +135°, total 270°)
         const needleAngle = speedRatio * Math.PI * 1.5 - Math.PI * 0.75;
         const needleX = 120 + Math.cos(needleAngle) * 80;
         const needleY = 120 + Math.sin(needleAngle) * 80;
         
+        // Draw needle with proper styling
         ctx.beginPath();
         ctx.moveTo(120, 120);
         ctx.lineTo(needleX, needleY);
         ctx.strokeStyle = '#ff4444';
         ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
         ctx.stroke();
         
         // Center dot
@@ -617,11 +661,12 @@ class FlightSimulator {
         ctx.fillStyle = '#fff';
         ctx.fill();
         
-        // Speed text
+        // Speed text with better formatting
         ctx.fillStyle = '#fff';
-        ctx.font = '20px Arial';
+        ctx.font = 'bold 20px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(Math.round(this.speed), 120, 180);
+        ctx.textBaseline = 'middle';
+        ctx.fillText(Math.round(currentSpeed), 120, 180);
     }
 
     setupAudio() {
@@ -630,6 +675,8 @@ class FlightSimulator {
         this.motorGain = null;
         this.motorOscillator = null;
         this.audioInitialized = false;
+        this.audioStopped = false;
+        this.audioEndedRecently = false;
     }
 
     initAudio() {
@@ -649,9 +696,13 @@ class FlightSimulator {
     }
 
     stopAllAudio() {
+        // Set flag to prevent new oscillator creation
+        this.audioStopped = true;
+        
         if (this.motorOscillator) {
             try {
                 this.motorOscillator.stop();
+                this.motorOscillator.disconnect();
             } catch (e) {
                 // Oscillator might already be stopped
             }
@@ -664,10 +715,15 @@ class FlightSimulator {
         
         // Clear any pending audio creation
         this.audioCreationPending = false;
+        
+        // Add a small delay before allowing audio to restart
+        setTimeout(() => {
+            this.audioStopped = false;
+        }, 100);
     }
 
     updateAudio() {
-        if (!this.audioContext || !this.soundEnabled || this.crashed || this.audioCreationPending) return;
+        if (!this.audioContext || !this.soundEnabled || this.crashed || this.audioCreationPending || this.audioStopped) return;
         
         // Resume audio context if suspended (required by some browsers)
         if (this.audioContext.state === 'suspended') {
@@ -680,7 +736,7 @@ class FlightSimulator {
         const volume = Math.max(0.02, 0.05 + this.thrust * 0.15); // Lower volume range
         
         // Only create oscillator if one doesn't exist and we're not in a problematic state
-        if (!this.motorOscillator && this.audioContext && !this.audioCreationPending) {
+        if (!this.motorOscillator && this.audioContext && !this.audioCreationPending && !this.audioEndedRecently) {
             this.audioCreationPending = true;
             try {
                 this.motorOscillator = this.audioContext.createOscillator();
@@ -693,6 +749,11 @@ class FlightSimulator {
                 this.motorOscillator.onended = () => {
                     this.motorOscillator = null;
                     this.audioCreationPending = false;
+                    // Add flag to prevent immediate recreation after end
+                    this.audioEndedRecently = true;
+                    setTimeout(() => {
+                        this.audioEndedRecently = false;
+                    }, 500);
                 };
                 
                 this.audioCreationPending = false;
@@ -1186,10 +1247,18 @@ class FlightSimulator {
     togglePause() {
         this.paused = !this.paused;
         const pauseMenu = document.getElementById('pause-menu');
-        pauseMenu.style.display = this.paused ? 'block' : 'none';
+        if (pauseMenu) {
+            pauseMenu.style.display = this.paused ? 'block' : 'none';
+        }
         
         if (this.paused) {
-            document.exitPointerLock();
+            // Exit pointer lock when pausing
+            if (document.pointerLockElement) {
+                document.exitPointerLock();
+            }
+        } else {
+            // Optionally request pointer lock when resuming
+            // But don't force it - user can click to activate
         }
     }
 
@@ -1222,9 +1291,14 @@ function togglePause() {
 function toggleSound() {
     if (window.game) {
         window.game.soundEnabled = !window.game.soundEnabled;
-        if (!window.game.soundEnabled && window.game.motorOscillator) {
-            window.game.motorOscillator.stop();
-            window.game.motorOscillator = null;
+        if (!window.game.soundEnabled) {
+            window.game.stopAllAudio();
+        }
+        
+        // Update button text to reflect current state
+        const soundButton = document.querySelector('button[onclick="toggleSound()"]');
+        if (soundButton) {
+            soundButton.textContent = window.game.soundEnabled ? 'Sound: ON' : 'Sound: OFF';
         }
     }
 }

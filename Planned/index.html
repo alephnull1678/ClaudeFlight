@@ -119,6 +119,7 @@
             text-align: center;
             backdrop-filter: blur(20px);
             display: none;
+            pointer-events: auto;
         }
         
         .pause-menu h2 {
@@ -156,6 +157,7 @@
             backdrop-filter: blur(10px);
             display: none;
             border: 2px solid #ff4444;
+            pointer-events: auto;
         }
     </style>
 </head>
@@ -185,7 +187,7 @@
         <div class="pause-menu" id="pause-menu">
             <h2>Paused</h2>
             <button onclick="togglePause()">Resume</button>
-            <button onclick="toggleSound()">Toggle Sound</button>
+            <button onclick="toggleSound()">Sound: ON</button>
         </div>
         
         <div class="crash-message" id="crash-message">
