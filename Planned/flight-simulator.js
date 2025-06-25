@@ -47,62 +47,85 @@ class FlightSimulator {
         this.chunkSize = 400; // Increased from 200
         this.viewDistance = 3;
         
-        // Biomes
+        // Biomes with increased tree frequency
         this.biomes = [
-            { name: 'Forest', color: 0x2d5a27, treeChance: 0.3 },
-            { name: 'Desert', color: 0xc2b280, treeChance: 0.05 },
-            { name: 'Mountains', color: 0x8b7355, treeChance: 0.1 },
-            { name: 'Plains', color: 0x7cfc00, treeChance: 0.15 },
-            { name: 'Tundra', color: 0xf0f8ff, treeChance: 0.02 },
-            { name: 'Swamp', color: 0x2f4f2f, treeChance: 0.4 },
-            { name: 'Canyon', color: 0xcd853f, treeChance: 0.05 },
-            { name: 'Volcanic', color: 0x8b0000, treeChance: 0.01 },
-            { name: 'Coastal', color: 0x87ceeb, treeChance: 0.2 },
-            { name: 'Jungle', color: 0x228b22, treeChance: 0.6 }
+            { name: 'Forest', color: 0x2d5a27, treeChance: 0.8 }, // Dramatically increased from 0.3
+            { name: 'Desert', color: 0xc2b280, treeChance: 0.1 }, // Doubled from 0.05
+            { name: 'Mountains', color: 0x8b7355, treeChance: 0.25 }, // Increased from 0.1
+            { name: 'Plains', color: 0x7cfc00, treeChance: 0.4 }, // Increased from 0.15
+            { name: 'Tundra', color: 0xf0f8ff, treeChance: 0.08 }, // Increased from 0.02
+            { name: 'Swamp', color: 0x2f4f2f, treeChance: 0.75 }, // Increased from 0.4
+            { name: 'Canyon', color: 0xcd853f, treeChance: 0.12 }, // Increased from 0.05
+            { name: 'Volcanic', color: 0x8b0000, treeChance: 0.03 }, // Increased from 0.01
+            { name: 'Coastal', color: 0x87ceeb, treeChance: 0.45 }, // Increased from 0.2
+            { name: 'Jungle', color: 0x228b22, treeChance: 0.9 } // Increased from 0.6
         ];
         this.currentBiome = this.biomes[0];
         
         // Noise for terrain generation
         this.noise = window.createNoise2D ? window.createNoise2D() : null;
         
-        // Day/night cycle
-        this.timeOfDay = 0.5; // 0 = midnight, 0.5 = noon, 1 = midnight
+        // Create water texture
+        this.createWaterTexture();
+        
+        // Day/night cycle - start at sunrise
+        this.timeOfDay = 0.25; // 0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset, 1 = midnight
         this.daySpeed = 0.0001;
+        
+        // Water system
+        this.waterLevel = -20; // Height at which water appears (below spawn level)
+        this.waterTime = 0; // For animating water texture
     }
 
     setupScene() {
-        // Scene
+        // Scene with enhanced atmospheric fog
         this.scene = new THREE.Scene();
-        this.scene.fog = new THREE.Fog(0x87ceeb, 100, 800);
+        this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.0015); // Increased fog density to hide pop-in
         
         // Camera
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
         this.camera.position.set(0, 210, 20);
         
-        // Renderer
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        // Renderer with enhanced graphics
+        this.renderer = new THREE.WebGLRenderer({ 
+            antialias: true,
+            powerPreference: "high-performance"
+        });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setClearColor(0x87ceeb);
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        
+        // Enhanced rendering settings for better visual quality
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.2;
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         document.body.appendChild(this.renderer.domElement);
         
-        // Lighting
-        this.sun = new THREE.DirectionalLight(0xffffff, 1);
+        // Enhanced lighting system
+        this.sun = new THREE.DirectionalLight(0xfff8dc, 1.5); // Warm white light
         this.sun.position.set(50, 100, 50);
         this.sun.castShadow = true;
-        this.sun.shadow.mapSize.width = 2048;
-        this.sun.shadow.mapSize.height = 2048;
+        
+        // Higher quality shadows
+        this.sun.shadow.mapSize.width = 4096; // Increased from 2048
+        this.sun.shadow.mapSize.height = 4096;
         this.sun.shadow.camera.near = 0.1;
-        this.sun.shadow.camera.far = 500;
-        this.sun.shadow.camera.left = -200;
-        this.sun.shadow.camera.right = 200;
-        this.sun.shadow.camera.top = 200;
-        this.sun.shadow.camera.bottom = -200;
+        this.sun.shadow.camera.far = 800; // Increased range
+        this.sun.shadow.camera.left = -400; // Larger shadow area
+        this.sun.shadow.camera.right = 400;
+        this.sun.shadow.camera.top = 400;
+        this.sun.shadow.camera.bottom = -400;
+        this.sun.shadow.bias = -0.0001; // Reduce shadow acne
         this.scene.add(this.sun);
         
-        this.ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+        // Improved ambient lighting with subtle blue tint for sky reflection
+        this.ambientLight = new THREE.AmbientLight(0x87ceeb, 0.4); // Increased intensity
         this.scene.add(this.ambientLight);
+        
+        // Add hemisphere light for more realistic sky lighting
+        this.hemisphereLight = new THREE.HemisphereLight(0x87ceeb, 0x8b7355, 0.3);
+        this.scene.add(this.hemisphereLight);
         
         // Sky
         this.createSky();
@@ -157,12 +180,78 @@ class FlightSimulator {
         
         // Add clouds
         this.createClouds();
+        
+        // Add sun and moon to the sky
+        this.createSunMoon();
+        
+        // Add stars for nighttime
+        this.createStars();
     }
 
     createClouds() {
         // Initialize clouds group (now used for tracking all clouds)
         this.clouds = new THREE.Group();
         this.scene.add(this.clouds);
+    }
+
+    createSunMoon() {
+        // Create sun - much larger and visible through fog
+        const sunGeometry = new THREE.SphereGeometry(25, 16, 16); // Increased from 8 to 25
+        const sunMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            emissive: 0xffff00,
+            emissiveIntensity: 0.6, // Increased brightness
+            fog: false // Disable fog effect for sun
+        });
+        this.sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+        this.scene.add(this.sunMesh);
+        
+        // Create moon - much larger and visible through fog
+        const moonGeometry = new THREE.SphereGeometry(20, 16, 16); // Increased from 6 to 20
+        const moonMaterial = new THREE.MeshBasicMaterial({
+            color: 0xeeeeee,
+            emissive: 0x666666,
+            emissiveIntensity: 0.3, // Increased brightness
+            fog: false // Disable fog effect for moon
+        });
+        this.moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
+        this.scene.add(this.moonMesh);
+    }
+
+    createStars() {
+        // Create star field
+        const starGeometry = new THREE.BufferGeometry();
+        const starCount = 1000;
+        const positions = new Float32Array(starCount * 3);
+        
+        // Generate random star positions on a sphere
+        for (let i = 0; i < starCount; i++) {
+            const i3 = i * 3;
+            
+            // Random spherical coordinates
+            const radius = 1200; // Distance from center
+            const theta = Math.random() * Math.PI * 2; // Azimuth
+            const phi = Math.acos(2 * Math.random() - 1); // Polar angle (uniform distribution)
+            
+            // Convert to Cartesian coordinates
+            positions[i3] = radius * Math.sin(phi) * Math.cos(theta);
+            positions[i3 + 1] = radius * Math.cos(phi);
+            positions[i3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+        }
+        
+        starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        
+        const starMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 2,
+            transparent: true,
+            opacity: 0.8,
+            fog: false // Stars not affected by fog
+        });
+        
+        this.stars = new THREE.Points(starGeometry, starMaterial);
+        this.stars.visible = false; // Initially hidden
+        this.scene.add(this.stars);
     }
 
     addChunkClouds(chunk, worldX, worldZ) {
@@ -174,10 +263,10 @@ class FlightSimulator {
             if (Math.random() < 0.3) {
                 const cloud = this.createSingleCloud();
                 
-                // Position cloud within chunk boundaries - moved higher
+                // Position cloud within chunk boundaries - moved much higher
                 cloud.position.set(
                     worldX + (Math.random() - 0.5) * this.chunkSize,
-                    Math.random() * 80 + 120, // Height between 120-200 (moved up from 80-180)
+                    Math.random() * 100 + 300, // Height between 300-400 (moved up significantly)
                     worldZ + (Math.random() - 0.5) * this.chunkSize
                 );
                 
@@ -187,32 +276,168 @@ class FlightSimulator {
     }
 
     createSingleCloud() {
-        const cloudGeometry = new THREE.BoxGeometry(
-            Math.random() * 30 + 20,
-            Math.random() * 10 + 5,
-            Math.random() * 20 + 10
-        );
+        const cloudGroup = new THREE.Group();
         
-        // Make clouds jagged
-        const vertices = cloudGeometry.attributes.position.array;
-        for (let j = 0; j < vertices.length; j += 3) {
-            vertices[j] += (Math.random() - 0.5) * 5;
-            vertices[j + 1] += (Math.random() - 0.5) * 3;
-            vertices[j + 2] += (Math.random() - 0.5) * 5;
+        // Create multiple spheres to form a cloud clump
+        const sphereCount = Math.floor(Math.random() * 8) + 6; // 6-13 spheres per cloud
+        
+        for (let i = 0; i < sphereCount; i++) {
+            // Varying sphere sizes for natural cloud look
+            const radius = Math.random() * 8 + 4; // Radius between 4-12
+            const sphereGeometry = new THREE.SphereGeometry(radius, 8, 6); // Low poly for performance
+            
+            // Translucent gray material
+            const sphereMaterial = new THREE.MeshLambertMaterial({
+                color: new THREE.Color().setHSL(0, 0, 0.7 + Math.random() * 0.2), // Light gray with variation
+                transparent: true,
+                opacity: 0.4 + Math.random() * 0.3, // Opacity between 0.4-0.7 for natural variation
+                fog: true
+            });
+            
+            const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+            
+            // Position spheres in a roughly cloud-like cluster
+            const clusterRadius = 15 + Math.random() * 10; // Cluster within radius 15-25
+            const angle = Math.random() * Math.PI * 2;
+            const height = (Math.random() - 0.5) * 8; // Vertical spread
+            
+            sphere.position.set(
+                Math.cos(angle) * clusterRadius * Math.random(),
+                height,
+                Math.sin(angle) * clusterRadius * Math.random()
+            );
+            
+            cloudGroup.add(sphere);
         }
-        cloudGeometry.attributes.position.needsUpdate = true;
         
-        const cloudMaterial = new THREE.MeshLambertMaterial({ 
-            color: 0xffffff,
+        // Add cloud movement properties to the group
+        cloudGroup.userData.speed = Math.random() * 0.2 + 0.1; // Faster scrolling
+        cloudGroup.userData.direction = Math.random() * Math.PI * 2; // Random direction
+        
+        return cloudGroup;
+    }
+
+    addHighAltitudeClouds(chunk, worldX, worldZ) {
+        // Add 2-5 high-altitude clouds per chunk with higher frequency
+        const cloudCount = Math.floor(Math.random() * 4) + 2;
+        
+        for (let i = 0; i < cloudCount; i++) {
+            // Higher chance for high-altitude clouds
+            if (Math.random() < 0.6) {
+                const cloud = this.createHighAltitudeCloud();
+                
+                // Position cloud within chunk boundaries - much higher
+                cloud.position.set(
+                    worldX + (Math.random() - 0.5) * this.chunkSize,
+                    Math.random() * 150 + 500, // Height between 500-650 (much higher than low clouds)
+                    worldZ + (Math.random() - 0.5) * this.chunkSize
+                );
+                
+                chunk.add(cloud);
+            }
+        }
+    }
+
+    createHighAltitudeCloud() {
+        const cloudGroup = new THREE.Group();
+        
+        // Create multiple larger spheres for high-altitude clouds
+        const sphereCount = Math.floor(Math.random() * 12) + 8; // 8-19 spheres (more than low clouds)
+        
+        for (let i = 0; i < sphereCount; i++) {
+            // Much larger spheres for high-altitude clouds
+            const radius = Math.random() * 25 + 15; // Radius between 15-40 (much larger than 4-12)
+            const sphereGeometry = new THREE.SphereGeometry(radius, 8, 6);
+            
+            // Lighter, more wispy material for high-altitude clouds
+            const sphereMaterial = new THREE.MeshLambertMaterial({
+                color: new THREE.Color().setHSL(0, 0, 0.85 + Math.random() * 0.1), // Very light gray/white
+                transparent: true,
+                opacity: 0.3 + Math.random() * 0.2, // Lower opacity (0.3-0.5) for wispy appearance
+                fog: true
+            });
+            
+            const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+            
+            // Position spheres in a much larger cluster for high-altitude clouds
+            const clusterRadius = 40 + Math.random() * 30; // Cluster within radius 40-70 (larger than 15-25)
+            const angle = Math.random() * Math.PI * 2;
+            const height = (Math.random() - 0.5) * 20; // Vertical spread
+            
+            sphere.position.set(
+                Math.cos(angle) * clusterRadius * Math.random(),
+                height,
+                Math.sin(angle) * clusterRadius * Math.random()
+            );
+            
+            cloudGroup.add(sphere);
+        }
+        
+        // Add movement properties for high-altitude clouds (slower movement)
+        cloudGroup.userData.speed = Math.random() * 0.1 + 0.05; // Slower than low clouds
+        cloudGroup.userData.direction = Math.random() * Math.PI * 2;
+        
+        return cloudGroup;
+    }
+
+    createWaterTexture() {
+        // Create a canvas for the water texture
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        
+        // Create a procedural water pattern
+        const imageData = ctx.createImageData(256, 256);
+        const data = imageData.data;
+        
+        for (let y = 0; y < 256; y++) {
+            for (let x = 0; x < 256; x++) {
+                const i = (y * 256 + x) * 4;
+                
+                // Create wave-like pattern using sine waves
+                const wave1 = Math.sin((x + y) * 0.02) * 0.3;
+                const wave2 = Math.sin(x * 0.03) * Math.sin(y * 0.03) * 0.4;
+                const wave3 = Math.sin((x - y) * 0.015) * 0.2;
+                const intensity = (wave1 + wave2 + wave3 + 1) * 0.5;
+                
+                // Blue water color with variation
+                data[i] = Math.floor(30 + intensity * 60);     // Red
+                data[i + 1] = Math.floor(144 + intensity * 60); // Green  
+                data[i + 2] = Math.floor(255 - intensity * 30); // Blue
+                data[i + 3] = 255; // Alpha
+            }
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+        
+        // Create texture from canvas
+        this.waterTexture = new THREE.CanvasTexture(canvas);
+        this.waterTexture.wrapS = THREE.RepeatWrapping;
+        this.waterTexture.wrapT = THREE.RepeatWrapping;
+        this.waterTexture.repeat.set(4, 4); // Repeat the texture 4x4 times
+    }
+
+    addWaterLayer(chunk, worldX, worldZ) {
+        // Always add water to every chunk to prevent square holes
+        const waterGeometry = new THREE.PlaneGeometry(this.chunkSize, this.chunkSize);
+        waterGeometry.rotateX(-Math.PI / 2); // Make it horizontal
+        
+        const waterMaterial = new THREE.MeshPhongMaterial({
+            map: this.waterTexture, // Use the procedural water texture
             transparent: true,
-            opacity: 0.8
+            opacity: 0.6, // More transparent (reduced from 0.85)
+            side: THREE.DoubleSide, // Visible from both sides
+            shininess: 100, // High shininess for water reflection
+            specular: 0x88ccff, // Light blue specular highlights
+            reflectivity: 0.5 // Increased reflectivity for better water appearance
         });
         
-        const cloud = new THREE.Mesh(cloudGeometry, cloudMaterial);
-        cloud.userData.speed = Math.random() * 0.2 + 0.1; // Faster scrolling
-        cloud.userData.direction = Math.random() * Math.PI * 2; // Random direction
+        const water = new THREE.Mesh(waterGeometry, waterMaterial);
+        water.position.set(worldX, this.waterLevel, worldZ);
+        water.userData.isWater = true; // Mark as water for collision detection
         
-        return cloud;
+        chunk.add(water);
     }
 
     createAirplane() {
@@ -337,10 +562,12 @@ class FlightSimulator {
         terrainGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         terrainGeometry.computeVertexNormals();
         
-        const terrainMaterial = new THREE.MeshLambertMaterial({ 
+        const terrainMaterial = new THREE.MeshPhongMaterial({ 
             vertexColors: true,
             flatShading: false, // Use smooth shading to reduce visible seams
-            wireframe: false
+            wireframe: false,
+            shininess: 10, // Subtle shine for more realistic terrain
+            specular: 0x222222 // Dark specular for natural look
         });
         
         const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
@@ -353,8 +580,14 @@ class FlightSimulator {
         const centerBiome = this.getBiomeAtPosition(worldX, worldZ);
         this.addChunkFeatures(chunk, worldX, worldZ, centerBiome);
         
-        // Add clouds to this chunk
+        // Add water layer if needed
+        this.addWaterLayer(chunk, worldX, worldZ);
+        
+        // Add low-level clouds to this chunk
         this.addChunkClouds(chunk, worldX, worldZ);
+        
+        // Add high-altitude clouds to this chunk
+        this.addHighAltitudeClouds(chunk, worldX, worldZ);
         
         chunk.position.set(0, 0, 0);
         this.scene.add(chunk);
@@ -419,15 +652,18 @@ class FlightSimulator {
     getTerrainHeight(x, z) {
         if (!this.noise) return 0;
         try {
-            // Macro-scale terrain (large hills and valleys) - RE-ENABLED
-            const macroScale = this.noise(x * 0.0008, z * 0.0008) * 80; // Much larger scale, increased amplitude
+            // Macro-scale terrain (large mountains and valleys) - Increased amplitude for dramatic landscapes
+            const macroScale = this.noise(x * 0.0008, z * 0.0008) * 200; // Increased from 80 to 200 for more dramatic terrain
             
-            // Micro-scale terrain (brought back for detail)
+            // Secondary macro layer for additional mountain complexity
+            const secondaryMacro = this.noise(x * 0.0012, z * 0.0012) * 120; // Additional large-scale variation
+            
+            // Micro-scale terrain (surface detail)
             const microScale = this.noise(x * 0.01, z * 0.01) * 25 +
                                this.noise(x * 0.03, z * 0.03) * 12 +
                                this.noise(x * 0.08, z * 0.08) * 6;
             
-            return macroScale + microScale;
+            return macroScale + secondaryMacro + microScale;
         } catch (e) {
             console.warn('Noise function error:', e);
             return 0;
@@ -435,15 +671,19 @@ class FlightSimulator {
     }
 
     addChunkFeatures(chunk, worldX, worldZ, biome) {
-        // Add trees
-        for (let i = 0; i < 20; i++) {
+        // Add trees - increased count for better coverage
+        for (let i = 0; i < 35; i++) {
             if (Math.random() < biome.treeChance) {
                 const tree = this.createTree();
                 const x = (Math.random() - 0.5) * this.chunkSize + worldX;
                 const z = (Math.random() - 0.5) * this.chunkSize + worldZ;
                 const y = this.getTerrainHeight(x, z);
-                tree.position.set(x, y, z);
-                chunk.add(tree);
+                
+                // Only place tree if terrain is above water level
+                if (y > this.waterLevel + 2) { // Add 2 unit buffer above water
+                    tree.position.set(x, y, z);
+                    chunk.add(tree);
+                }
             }
         }
         
@@ -453,8 +693,17 @@ class FlightSimulator {
             const x = (Math.random() - 0.5) * this.chunkSize * 0.5 + worldX;
             const z = (Math.random() - 0.5) * this.chunkSize * 0.5 + worldZ;
             const y = this.getTerrainHeight(x, z);
-            house.position.set(x, y, z);
-            chunk.add(house);
+            
+            // Only place house if terrain is above water level
+            if (y > this.waterLevel + 2) { // Add 2 unit buffer above water
+                house.position.set(x, y, z);
+                chunk.add(house);
+            }
+        }
+        
+        // Add building clusters in certain biomes - increased frequency
+        if ((biome.name === 'Plains' || biome.name === 'Coastal') && Math.random() < 0.2) {
+            this.addBuildingCluster(chunk, worldX, worldZ);
         }
         
         // Add rocks
@@ -464,8 +713,12 @@ class FlightSimulator {
                 const x = (Math.random() - 0.5) * this.chunkSize + worldX;
                 const z = (Math.random() - 0.5) * this.chunkSize + worldZ;
                 const y = this.getTerrainHeight(x, z);
-                rock.position.set(x, y, z);
-                chunk.add(rock);
+                
+                // Only place rock if terrain is above water level
+                if (y > this.waterLevel + 1) { // Add 1 unit buffer above water (rocks can be closer to water)
+                    rock.position.set(x, y, z);
+                    chunk.add(rock);
+                }
             }
         }
     }
@@ -473,21 +726,39 @@ class FlightSimulator {
     createTree() {
         const tree = new THREE.Group();
         
-        // Trunk
-        const trunkGeometry = new THREE.CylinderGeometry(0.5, 0.8, 8, 6);
-        const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8b4513 });
+        // Randomize tree size for variety
+        const treeScale = 0.7 + Math.random() * 0.6; // Scale between 0.7 and 1.3
+        const trunkHeight = 6 + Math.random() * 4; // Height variation
+        
+        // Trunk with better material
+        const trunkGeometry = new THREE.CylinderGeometry(0.5 * treeScale, 0.8 * treeScale, trunkHeight, 8);
+        const trunkMaterial = new THREE.MeshPhongMaterial({ 
+            color: new THREE.Color().setHSL(0.08, 0.5, 0.2 + Math.random() * 0.1), // Brown with variation
+            shininess: 5,
+            specular: 0x111111
+        });
         const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
-        trunk.position.y = 4;
+        trunk.position.y = trunkHeight / 2;
         trunk.castShadow = true;
+        trunk.receiveShadow = true;
         tree.add(trunk);
         
-        // Leaves
-        const leavesGeometry = new THREE.ConeGeometry(4, 6, 8);
-        const leavesMaterial = new THREE.MeshLambertMaterial({ color: 0x228b22 });
+        // Leaves with better material and color variation
+        const leavesGeometry = new THREE.ConeGeometry(3 + Math.random() * 2, 5 + Math.random() * 3, 8);
+        const leafHue = 0.25 + Math.random() * 0.15; // Green with variation
+        const leavesMaterial = new THREE.MeshPhongMaterial({ 
+            color: new THREE.Color().setHSL(leafHue, 0.7, 0.3 + Math.random() * 0.2),
+            shininess: 20,
+            specular: 0x004400
+        });
         const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
-        leaves.position.y = 10;
+        leaves.position.y = trunkHeight + 2;
         leaves.castShadow = true;
+        leaves.receiveShadow = true;
         tree.add(leaves);
+        
+        // Random rotation for natural placement
+        tree.rotation.y = Math.random() * Math.PI * 2;
         
         return tree;
     }
@@ -513,6 +784,66 @@ class FlightSimulator {
         house.add(roof);
         
         return house;
+    }
+
+    createBuilding() {
+        const building = new THREE.Group();
+        
+        // Randomize building dimensions - slightly reduced from previous large size
+        const width = 12 + Math.random() * 16; // 12-28 units wide (reduced from 15-35)
+        const depth = 12 + Math.random() * 16; // 12-28 units deep (reduced from 15-35)
+        const height = 20 + Math.random() * 30; // 20-50 units tall (reduced from 25-65)
+        
+        // Base building
+        const baseGeometry = new THREE.BoxGeometry(width, height, depth);
+        const baseMaterial = new THREE.MeshPhongMaterial({ 
+            color: new THREE.Color().setHSL(0, 0, 0.4 + Math.random() * 0.3), // Gray with variation
+            shininess: 10
+        });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        base.position.y = height / 2;
+        base.castShadow = true;
+        base.receiveShadow = true;
+        building.add(base);
+        
+        // Add some windows (simple dark rectangles)
+        const windowCount = Math.floor(height / 4); // One window per 4 units of height
+        for (let i = 0; i < windowCount; i++) {
+            const windowGeometry = new THREE.BoxGeometry(width * 0.8, 2, 0.1);
+            const windowMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+            const window = new THREE.Mesh(windowGeometry, windowMaterial);
+            window.position.set(0, 3 + i * 4, depth / 2 + 0.05);
+            building.add(window);
+        }
+        
+        // Random rotation
+        building.rotation.y = Math.random() * Math.PI * 2;
+        
+        return building;
+    }
+
+    addBuildingCluster(chunk, worldX, worldZ) {
+        // Create a much larger cluster of 8-15 buildings
+        const buildingCount = Math.floor(Math.random() * 8) + 8;
+        const clusterCenterX = worldX + (Math.random() - 0.5) * this.chunkSize * 0.6;
+        const clusterCenterZ = worldZ + (Math.random() - 0.5) * this.chunkSize * 0.6;
+        
+        for (let i = 0; i < buildingCount; i++) {
+            const building = this.createBuilding();
+            
+            // Position buildings in a cluster pattern with wider spread
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * 80; // Within 80 units of cluster center (doubled from 40)
+            const x = clusterCenterX + Math.cos(angle) * distance;
+            const z = clusterCenterZ + Math.sin(angle) * distance;
+            const y = this.getTerrainHeight(x, z);
+            
+            // Only place building if terrain is above water level
+            if (y > this.waterLevel + 5) { // Add 5 unit buffer above water for buildings
+                building.position.set(x, y, z);
+                chunk.add(building);
+            }
+        }
     }
 
     createRock() {
@@ -866,8 +1197,11 @@ class FlightSimulator {
         
         const groundClearance = this.airplane.position.y - terrainHeight;
         
-        // Grazing effect
-        if (groundClearance < 5 && groundClearance > 0) {
+        // Check water collision
+        const waterClearance = this.airplane.position.y - this.waterLevel;
+        
+        // Grazing effect (terrain or water)
+        if ((groundClearance < 5 && groundClearance > 0) || (waterClearance < 5 && waterClearance > 0 && terrainHeight < this.waterLevel)) {
             this.cameraShake.intensity = 0.5;
             this.cameraShake.duration = 10;
         }
@@ -878,11 +1212,17 @@ class FlightSimulator {
             this.cameraShake.duration = 5;
         }
         
-        // Crash detection
+        // Water collision detection - crash if hitting water
+        if (terrainHeight < this.waterLevel && waterClearance <= 0 && this.velocity.length() > 0.1) {
+            this.crash();
+            return; // Exit early to avoid terrain collision logic
+        }
+        
+        // Terrain crash detection
         if (groundClearance <= 0 && this.velocity.length() > 0.3) {
             this.crash();
         } else if (groundClearance <= 0) {
-            // Soft landing
+            // Soft landing on terrain
             this.airplane.position.y = terrainHeight + 0.5;
             this.velocity.y = 0;
         }
@@ -1139,7 +1479,7 @@ class FlightSimulator {
         this.timeOfDay += this.daySpeed;
         if (this.timeOfDay > 1) this.timeOfDay = 0;
         
-        // Update sun position
+        // Sun angle based on time - simple linear progression
         const sunAngle = this.timeOfDay * Math.PI * 2;
         this.sun.position.set(
             Math.cos(sunAngle) * 200,
@@ -1147,25 +1487,117 @@ class FlightSimulator {
             50
         );
         
-        // Update lighting - brighter night
-        const dayIntensity = Math.max(0.5, Math.sin(sunAngle)); // Increased minimum from 0.3 to 0.5
+        // Calculate sun height (normalized from -1 to 1)
+        const sunHeight = Math.sin(sunAngle);
+        
+        // Update sun and moon mesh positions
+        if (this.sunMesh && this.moonMesh) {
+            // Position sun mesh relative to player
+            const sunDistance = 800;
+            
+            this.sunMesh.position.set(
+                this.airplane.position.x + Math.cos(sunAngle) * sunDistance,
+                this.airplane.position.y + sunHeight * sunDistance,
+                this.airplane.position.z + 50
+            );
+            
+            // Position moon opposite to sun
+            const moonAngle = sunAngle + Math.PI;
+            const moonHeight = Math.sin(moonAngle);
+            
+            this.moonMesh.position.set(
+                this.airplane.position.x + Math.cos(moonAngle) * sunDistance,
+                this.airplane.position.y + moonHeight * sunDistance,
+                this.airplane.position.z + 50
+            );
+            
+            // Show/hide sun and moon based on their height
+            this.sunMesh.visible = sunHeight > -0.1;
+            this.moonMesh.visible = moonHeight > -0.1;
+            
+            // Size scaling based on proximity to horizon
+            const sunHorizonFactor = 1 + (1 - Math.abs(sunHeight)) * 0.5;
+            const moonHorizonFactor = 1 + (1 - Math.abs(moonHeight)) * 0.5;
+            
+            this.sunMesh.scale.setScalar(sunHorizonFactor);
+            this.moonMesh.scale.setScalar(moonHorizonFactor);
+        }
+        
+        // SKY COLOR SYSTEM BASED ON SUN POSITION - SMOOTH TRANSITIONS
+        let skyColor;
+        
+        // Define key colors for different sun positions
+        const brightBlue = new THREE.Color(0x4a90e2);   // High noon
+        const skyBlue = new THREE.Color(0x87ceeb);      // Day
+        const warmBlue = new THREE.Color(0x87ceeb);     // Afternoon  
+        const orange = new THREE.Color(0xffa500);       // Sunset/sunrise
+        const red = new THREE.Color(0xff6347);          // Deep sunset
+        const purple = new THREE.Color(0x8b008b);       // Twilight
+        const darkBlue = new THREE.Color(0x191970);     // Late twilight
+        const nightBlue = new THREE.Color(0x0a0a2a);    // Night
+        
+        // Smooth interpolation based on sun height
+        if (sunHeight > 0.8) {
+            // High noon region - interpolate to bright blue
+            const t = Math.min(1, (sunHeight - 0.8) / 0.2);
+            skyColor = skyBlue.clone().lerp(brightBlue, t);
+        } else if (sunHeight > 0.3) {
+            // Day region - stable blue with slight variation
+            const t = (sunHeight - 0.3) / 0.5;
+            skyColor = warmBlue.clone().lerp(skyBlue, t);
+        } else if (sunHeight > 0.1) {
+            // Late afternoon - blue to orange transition
+            const t = (sunHeight - 0.1) / 0.2;
+            skyColor = orange.clone().lerp(warmBlue, t);
+        } else if (sunHeight > -0.1) {
+            // Sunset/Sunrise - orange to red transition  
+            const t = (sunHeight + 0.1) / 0.2;
+            skyColor = red.clone().lerp(orange, t);
+        } else if (sunHeight > -0.2) {
+            // Early twilight - red to purple
+            const t = (sunHeight + 0.2) / 0.1;
+            skyColor = purple.clone().lerp(red, t);
+        } else if (sunHeight > -0.4) {
+            // Late twilight - purple to dark blue
+            const t = (sunHeight + 0.4) / 0.2;
+            skyColor = darkBlue.clone().lerp(purple, t);
+        } else {
+            // Night - dark blue to very dark
+            const t = Math.max(0, (sunHeight + 0.6) / 0.2);
+            skyColor = nightBlue.clone().lerp(darkBlue, t);
+        }
+        
+        // Lighting intensity based on sun height
+        const dayIntensity = Math.max(0.1, Math.max(0, sunHeight) * 1.5);
         this.sun.intensity = dayIntensity;
         
-        // Update sky color - brighter night colors
-        const morning = new THREE.Color(0xff7f50);
-        const noon = new THREE.Color(0x87ceeb);
-        const evening = new THREE.Color(0x4b0082);
-        const night = new THREE.Color(0x2f4f7f); // Brighter night color (was 0x191970)
+        // Update hemisphere light
+        if (this.hemisphereLight) {
+            this.hemisphereLight.intensity = Math.max(0.05, Math.max(0, sunHeight) * 0.3);
+        }
         
-        let skyColor;
-        if (this.timeOfDay < 0.25) {
-            skyColor = night.clone().lerp(morning, this.timeOfDay * 4);
-        } else if (this.timeOfDay < 0.5) {
-            skyColor = morning.clone().lerp(noon, (this.timeOfDay - 0.25) * 4);
-        } else if (this.timeOfDay < 0.75) {
-            skyColor = noon.clone().lerp(evening, (this.timeOfDay - 0.5) * 4);
+        // Sun color based on height
+        let sunColor;
+        if (sunHeight > 0.3) {
+            sunColor = new THREE.Color(0xfff8dc); // Warm white during day
+        } else if (sunHeight > -0.1) {
+            sunColor = new THREE.Color(0xffa500); // Orange during sunset/sunrise
         } else {
-            skyColor = evening.clone().lerp(night, (this.timeOfDay - 0.75) * 4);
+            sunColor = new THREE.Color(0xff4500); // Red-orange when below horizon
+        }
+        this.sun.color = sunColor;
+        
+        // Update stars visibility and position
+        if (this.stars) {
+            this.stars.visible = sunHeight < -0.1; // Stars visible only when sun is well below horizon
+            if (this.stars.visible) {
+                // Fade stars in/out based on darkness
+                const starOpacity = Math.max(0, Math.min(1, (-sunHeight - 0.1) / 0.3));
+                this.stars.material.opacity = starOpacity;
+                
+                // Stars follow player position
+                this.stars.position.copy(this.airplane.position);
+            }
         }
         
         this.renderer.setClearColor(skyColor);
@@ -1273,11 +1705,21 @@ class FlightSimulator {
             this.updateBiome();
             this.updateDayNightCycle();
             this.updateClouds();
+            this.updateWater();
             this.updateAudio();
             this.updateUI();
         }
         
         this.renderer.render(this.scene, this.camera);
+    }
+
+    updateWater() {
+        if (this.waterTexture) {
+            this.waterTime += 0.005;
+            // Animate the water texture for flowing effect
+            this.waterTexture.offset.x = this.waterTime * 0.1;
+            this.waterTexture.offset.y = this.waterTime * 0.05;
+        }
     }
 }
 
