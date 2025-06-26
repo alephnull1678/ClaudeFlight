@@ -27,6 +27,12 @@ class FlightSimulator {
         this.firstPerson = false;
         this.crashed = false;
         
+        // Shooting system
+        this.projectiles = [];
+        this.isMousePressed = false;
+        this.lastShotTime = 0;
+        this.fireRate = 100; // milliseconds between shots in auto mode
+        
         // Physics
         this.velocity = new THREE.Vector3(0, 0, 0);
         this.acceleration = new THREE.Vector3(0, 0, 0);
@@ -894,6 +900,20 @@ class FlightSimulator {
             }
         });
         
+        // Mouse shooting controls
+        document.addEventListener('mousedown', (event) => {
+            if (event.button === 0 && !this.paused && !this.crashed) { // Left mouse button
+                this.isMousePressed = true;
+                this.shoot(); // Fire immediately on click
+            }
+        });
+        
+        document.addEventListener('mouseup', (event) => {
+            if (event.button === 0) {
+                this.isMousePressed = false;
+            }
+        });
+        
         // Pointer lock for better mouse control
         document.addEventListener('click', () => {
             // Initialize audio on first click
@@ -1187,6 +1207,12 @@ class FlightSimulator {
         
         // Update exhaust particles
         this.updateExhaustParticles();
+        
+        // Update shooting system
+        this.updateShooting();
+        
+        // Update projectiles
+        this.updateProjectiles();
     }
 
     checkCollisions() {
@@ -1401,6 +1427,148 @@ class FlightSimulator {
         
         this.exhaustParticles.add(particle.mesh);
         this.particles.push(particle);
+    }
+
+    shoot() {
+        if (this.paused || this.crashed) return;
+        
+        // Create projectile
+        const projectile = {
+            mesh: this.createProjectileMesh(),
+            velocity: new THREE.Vector3(),
+            startTime: Date.now(),
+            lifespan: 5000 // 5 seconds
+        };
+        
+        // Position at front of plane
+        const planeForward = new THREE.Vector3(1, 0, 0);
+        planeForward.applyQuaternion(this.airplane.quaternion);
+        
+        projectile.mesh.position.copy(this.airplane.position);
+        projectile.mesh.position.add(planeForward.clone().multiplyScalar(5)); // 5 units in front
+        
+        // Set velocity in plane's forward direction + inherit plane's velocity
+        projectile.velocity.copy(planeForward).multiplyScalar(2); // Fast projectile speed
+        projectile.velocity.add(this.velocity); // Add plane's current velocity
+        
+        // Orient projectile to match direction
+        projectile.mesh.lookAt(projectile.mesh.position.clone().add(projectile.velocity));
+        
+        this.scene.add(projectile.mesh);
+        this.projectiles.push(projectile);
+        
+        // Play firing sound
+        this.playFiringSound();
+    }
+    
+    createProjectileMesh() {
+        const geometry = new THREE.BoxGeometry(0.1, 0.1, 2); // Thin yellow rectangle
+        const material = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // Yellow
+        return new THREE.Mesh(geometry, material);
+    }
+    
+    updateShooting() {
+        if (!this.isMousePressed || this.paused || this.crashed) return;
+        
+        const now = Date.now();
+        if (now - this.lastShotTime >= this.fireRate) {
+            this.shoot();
+            this.lastShotTime = now;
+        }
+    }
+    
+    updateProjectiles() {
+        for (let i = this.projectiles.length - 1; i >= 0; i--) {
+            const projectile = this.projectiles[i];
+            
+            // Check if projectile expired
+            if (Date.now() - projectile.startTime > projectile.lifespan) {
+                this.scene.remove(projectile.mesh);
+                this.projectiles.splice(i, 1);
+                continue;
+            }
+            
+            // Update position
+            projectile.mesh.position.add(projectile.velocity);
+            
+            // Check terrain collision
+            const terrainHeight = this.getTerrainHeight(
+                projectile.mesh.position.x,
+                projectile.mesh.position.z
+            );
+            
+            if (projectile.mesh.position.y <= terrainHeight) {
+                // Hit terrain - create explosion
+                this.createProjectileExplosion(projectile.mesh.position.clone());
+                this.playExplosionSound();
+                
+                // Remove projectile
+                this.scene.remove(projectile.mesh);
+                this.projectiles.splice(i, 1);
+            }
+        }
+    }
+    
+    createProjectileExplosion(position) {
+        const explosionGeometry = new THREE.BufferGeometry();
+        const particleCount = 20;
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        
+        for (let i = 0; i < particleCount; i++) {
+            positions[i * 3] = (Math.random() - 0.5) * 4;
+            positions[i * 3 + 1] = Math.random() * 4;
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 4;
+            
+            colors[i * 3] = 1;
+            colors[i * 3 + 1] = Math.random() * 0.8;
+            colors[i * 3 + 2] = 0;
+        }
+        
+        explosionGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        explosionGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        
+        const explosionMaterial = new THREE.PointsMaterial({
+            size: 3,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const explosion = new THREE.Points(explosionGeometry, explosionMaterial);
+        explosion.position.copy(position);
+        this.scene.add(explosion);
+        
+        // Remove explosion after 1 second
+        setTimeout(() => {
+            this.scene.remove(explosion);
+        }, 1000);
+    }
+    
+    playFiringSound() {
+        if (!this.audioContext || !this.soundEnabled) return;
+        
+        try {
+            const firingGain = this.audioContext.createGain();
+            firingGain.connect(this.audioContext.destination);
+            
+            // Create oscillator for firing sound
+            const firingOsc = this.audioContext.createOscillator();
+            firingOsc.type = 'square';
+            firingOsc.frequency.setValueAtTime(800, this.audioContext.currentTime);
+            firingOsc.connect(firingGain);
+            
+            // Quick burst envelope
+            const currentTime = this.audioContext.currentTime;
+            firingGain.gain.setValueAtTime(0, currentTime);
+            firingGain.gain.linearRampToValueAtTime(0.1, currentTime + 0.01);
+            firingGain.gain.exponentialRampToValueAtTime(0.01, currentTime + 0.1);
+            
+            firingOsc.start(currentTime);
+            firingOsc.stop(currentTime + 0.1);
+        } catch (e) {
+            console.warn('Failed to play firing sound:', e);
+        }
     }
 
     updateCamera() {
@@ -1662,6 +1830,12 @@ class FlightSimulator {
             this.explosionTimeout = null;
         }
         
+        // Clean up all projectiles
+        for (const projectile of this.projectiles) {
+            this.scene.remove(projectile.mesh);
+        }
+        this.projectiles = [];
+        
         this.crashed = false;
         this.airplane.position.set(0, 200, 0);
         this.airplane.rotation.set(0, 0, 0);
@@ -1671,6 +1845,7 @@ class FlightSimulator {
         this.speed = 0;
         this.cameraShake.intensity = 0;
         this.cameraShake.duration = 0;
+        this.isMousePressed = false;
         
         // Stop all sounds and restart
         this.stopAllAudio();
