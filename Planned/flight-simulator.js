@@ -1135,28 +1135,51 @@ class FlightSimulator {
         const yawSpeed = 0.03;
         const rollSpeed = 0.05;
         
-        // Pitch (W/S)
+        // Create rotation quaternions for each axis
+        const pitchQuaternion = new THREE.Quaternion();
+        const yawQuaternion = new THREE.Quaternion();
+        const rollQuaternion = new THREE.Quaternion();
+        const mouseQuaternion = new THREE.Quaternion();
+        
+        // Roll (W/S) - rotate around local Z axis (barrel roll)
         if (this.keys['KeyW']) {
-            this.airplane.rotation.x -= pitchSpeed;
+            rollQuaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -rollSpeed);
+            this.airplane.quaternion.multiplyQuaternions(this.airplane.quaternion, rollQuaternion);
         }
         if (this.keys['KeyS']) {
-            this.airplane.rotation.x += pitchSpeed;
+            rollQuaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), rollSpeed);
+            this.airplane.quaternion.multiplyQuaternions(this.airplane.quaternion, rollQuaternion);
         }
         
-        // Yaw (A/D)
+        // Yaw (A/D) - rotate around world Y axis (always vertical)
         if (this.keys['KeyA']) {
-            this.airplane.rotation.y += yawSpeed;
+            yawQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawSpeed);
+            this.airplane.quaternion.multiplyQuaternions(yawQuaternion, this.airplane.quaternion);
         }
         if (this.keys['KeyD']) {
-            this.airplane.rotation.y -= yawSpeed;
+            yawQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -yawSpeed);
+            this.airplane.quaternion.multiplyQuaternions(yawQuaternion, this.airplane.quaternion);
         }
         
-        // Roll (Q/E)
+        // Pitch (Q/E) - rotate around local X axis (nose up/down)
         if (this.keys['KeyQ']) {
-            this.airplane.rotation.z += rollSpeed;
+            pitchQuaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -pitchSpeed);
+            this.airplane.quaternion.multiplyQuaternions(this.airplane.quaternion, pitchQuaternion);
         }
         if (this.keys['KeyE']) {
-            this.airplane.rotation.z -= rollSpeed;
+            pitchQuaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchSpeed);
+            this.airplane.quaternion.multiplyQuaternions(this.airplane.quaternion, pitchQuaternion);
+        }
+        
+        // Mouse look (subtle influence) - applied as world-space rotations
+        if (Math.abs(this.mouse.x) > 0.01 || Math.abs(this.mouse.y) > 0.01) {
+            // Yaw from mouse X
+            yawQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.mouse.x * 0.01);
+            this.airplane.quaternion.multiplyQuaternions(yawQuaternion, this.airplane.quaternion);
+            
+            // Pitch from mouse Y
+            pitchQuaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), this.mouse.y * 0.01);
+            this.airplane.quaternion.multiplyQuaternions(this.airplane.quaternion, pitchQuaternion);
         }
         
         // Throttle (Shift)
@@ -1165,10 +1188,6 @@ class FlightSimulator {
         } else {
             this.thrust = Math.max(this.thrust - 0.002, 0); // Reduced from 0.01
         }
-        
-        // Mouse look (subtle influence)
-        this.airplane.rotation.y += this.mouse.x * 0.01;
-        this.airplane.rotation.x += this.mouse.y * 0.01;
         
         // Propeller spin
         if (this.propeller) {
@@ -1838,7 +1857,7 @@ class FlightSimulator {
         
         this.crashed = false;
         this.airplane.position.set(0, 200, 0);
-        this.airplane.rotation.set(0, 0, 0);
+        this.airplane.quaternion.set(0, 0, 0, 1); // Reset to identity quaternion
         this.velocity.set(0, 0, 0);
         this.acceleration.set(0, 0, 0);
         this.thrust = 0;
