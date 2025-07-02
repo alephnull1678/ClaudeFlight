@@ -205,12 +205,36 @@
         // Make it globally available
         window.createNoise2D = createNoise2D;
         
-        // Wait for THREE to be available and load main script
+        // Wait for THREE to be available and load all scripts
         function loadMainScript() {
             if (typeof THREE !== 'undefined') {
-                const script = document.createElement('script');
-                script.src = 'flight-simulator.js';
-                document.head.appendChild(script);
+                // Load modules in dependency order
+                const scripts = [
+                    'js/audio.js',
+                    'js/sky.js', 
+                    'js/terrain.js',
+                    'js/aircraft.js',
+                    'js/shooting.js',
+                    'js/controls.js',
+                    'js/ui.js',
+                    'js/game.js'
+                ];
+                
+                let loadedCount = 0;
+                
+                function loadNextScript() {
+                    if (loadedCount < scripts.length) {
+                        const script = document.createElement('script');
+                        script.src = scripts[loadedCount];
+                        script.onload = () => {
+                            loadedCount++;
+                            loadNextScript();
+                        };
+                        document.head.appendChild(script);
+                    }
+                }
+                
+                loadNextScript();
             } else {
                 setTimeout(loadMainScript, 100);
             }
