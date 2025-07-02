@@ -3,6 +3,10 @@ class UISystem {
         this.speedometerCanvas = null;
         this.speedometerCtx = null;
         this.createSpeedometer();
+        this.lastFrameTime = performance.now();
+        this.frameCount = 0;
+        this.fps = 0;
+        this.debugEnabled = false;
     }
     
     createSpeedometer() {
@@ -129,10 +133,56 @@ class UISystem {
             crashMessage.style.display = 'none';
         }
     }
+
+    toggleDebugMenu() {
+        this.debugEnabled = !this.debugEnabled;
+        const debugMenu = document.getElementById('debug-menu');
+        const debugButton = document.querySelector('.pause-menu button:last-of-type');
+        
+        if (debugMenu) {
+            debugMenu.classList.toggle('visible', this.debugEnabled);
+        }
+        
+        if (debugButton) {
+            debugButton.textContent = `Debug Info: ${this.debugEnabled ? 'ON' : 'OFF'}`;
+        }
+    }
+
+    updateFPS() {
+        const currentTime = performance.now();
+        this.frameCount++;
+
+        if (currentTime - this.lastFrameTime >= 1000) {
+            this.fps = this.frameCount;
+            this.frameCount = 0;
+            this.lastFrameTime = currentTime;
+        }
+
+        if (this.debugEnabled) {
+            const fpsCounter = document.getElementById('fps-counter');
+            if (fpsCounter) {
+                fpsCounter.textContent = `FPS: ${this.fps}`;
+            }
+        }
+    }
+
+    updateDayNightState(skySystem) {
+        if (this.debugEnabled) {
+            const dayNightState = document.getElementById('day-night-state');
+            if (dayNightState && skySystem) {
+                const timeOfDay = skySystem.getTimeOfDay();
+                const timeStr = timeOfDay >= 0.25 && timeOfDay < 0.75 ? 'Day' : 'Night';
+                const percent = Math.round(timeOfDay * 100);
+                dayNightState.textContent = `Time: ${timeStr} (${percent}%)`;
+            }
+        }
+    }
     
-    update(aircraft) {
+    update(aircraft, skySystem) {
         this.updateSpeedometer(aircraft.speed);
         this.updateAltimeter(aircraft.altitude);
+        this.updateFPS();
+        this.updateDayNightState(skySystem);
     }
 }
 
@@ -146,5 +196,11 @@ function togglePause() {
 function toggleSound() {
     if (window.game && window.game.audioSystem) {
         window.game.audioSystem.toggleSound();
+    }
+}
+
+function toggleDebugMenu() {
+    if (window.game && window.game.uiSystem) {
+        window.game.uiSystem.toggleDebugMenu();
     }
 }
