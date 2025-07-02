@@ -159,6 +159,29 @@
             border: 2px solid #ff4444;
             pointer-events: auto;
         }
+
+        /* Debug Menu Styles */
+        .debug-menu {
+            position: absolute;
+            top: 20px;
+            right: 80px;
+            color: #fff;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            display: none;
+        }
+
+        .debug-menu.visible {
+            display: block;
+        }
+
+        .debug-menu div {
+            margin: 5px 0;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -189,11 +212,17 @@
             <h2>Paused</h2>
             <button onclick="togglePause()">Resume</button>
             <button onclick="toggleSound()">Sound: ON</button>
+            <button onclick="toggleDebugMenu()">Debug Info: OFF</button>
         </div>
         
         <div class="crash-message" id="crash-message">
             CRASHED!<br>
             Press R to Reset
+        </div>
+
+        <div class="debug-menu" id="debug-menu">
+            <div id="fps-counter">FPS: 60</div>
+            <div id="day-night-state">Time: Day</div>
         </div>
     </div>
 

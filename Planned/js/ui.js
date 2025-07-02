@@ -3,6 +3,15 @@ class UISystem {
         this.speedometerCanvas = null;
         this.speedometerCtx = null;
         this.createSpeedometer();
+        this.lastFrameTime = performance.now();
+        this.frameCount = 0;
+        this.fps = 0;
+        this.debugEnabled = false;
+        
+        // Cache DOM elements
+        this.fpsCounter = document.getElementById('fps-counter');
+        this.dayNightState = document.getElementById('day-night-state');
+        this.debugMenu = document.getElementById('debug-menu');
     }
     
     createSpeedometer() {
@@ -129,10 +138,54 @@ class UISystem {
             crashMessage.style.display = 'none';
         }
     }
+
+    toggleDebugMenu() {
+        this.debugEnabled = !this.debugEnabled;
+        const debugButton = document.querySelector('.pause-menu button:last-of-type');
+        
+        if (this.debugMenu) {
+            this.debugMenu.classList.toggle('visible', this.debugEnabled);
+        }
+        
+        if (debugButton) {
+            debugButton.textContent = `Debug Info: ${this.debugEnabled ? 'ON' : 'OFF'}`;
+        }
+    }
+
+    updateFPS() {
+        const currentTime = performance.now();
+        this.frameCount++;
+
+        if (currentTime - this.lastFrameTime >= 1000) {
+            this.fps = this.frameCount;
+            this.frameCount = 0;
+            this.lastFrameTime = currentTime;
+
+            // Only update the DOM when FPS is recalculated (once per second)
+            if (this.debugEnabled && this.fpsCounter) {
+                this.fpsCounter.textContent = `FPS: ${this.fps}`;
+            }
+        }
+    }
+
+    updateDayNightState(skySystem) {
+        if (this.debugEnabled && this.dayNightState && skySystem) {
+            const timeOfDay = skySystem.getTimeOfDay();
+            const timeStr = timeOfDay >= 0.25 && timeOfDay < 0.75 ? 'Day' : 'Night';
+            const percent = Math.round(timeOfDay * 100);
+            this.dayNightState.textContent = `Time: ${timeStr} (${percent}%)`;
+        }
+    }
     
-    update(aircraft) {
+    update(aircraft, skySystem) {
         this.updateSpeedometer(aircraft.speed);
         this.updateAltimeter(aircraft.altitude);
+        this.updateFPS();
+        
+        // Only update day/night state every second to avoid unnecessary DOM updates
+        if (this.frameCount === 0) {
+            this.updateDayNightState(skySystem);
+        }
     }
 }
 
@@ -146,5 +199,11 @@ function togglePause() {
 function toggleSound() {
     if (window.game && window.game.audioSystem) {
         window.game.audioSystem.toggleSound();
+    }
+}
+
+function toggleDebugMenu() {
+    if (window.game && window.game.uiSystem) {
+        window.game.uiSystem.toggleDebugMenu();
     }
 }
